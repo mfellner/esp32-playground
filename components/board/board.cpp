@@ -33,6 +33,13 @@ void brightness(unsigned n) {
     uint8_t value = std::min(n, 100u) * 255 / 100;
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io, 0x02005100, &value, 1));
 }
+#ifdef CONFIG_SPARKDASH_TEST_COMMANDS
+void wait_transfer() {
+    // IDF SPI tx_param drains queued transfers; a negative command with no data
+    // performs no panel write. Call only from the LVGL task/lock owner.
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io, -1, nullptr, 0));
+}
+#endif
 bool lock(int timeout) {
     return esp_lv_adapter_lock(timeout) == ESP_OK;
 }

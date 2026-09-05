@@ -10,7 +10,7 @@
 | USB | Espressif USB JTAG/serial debug unit, VID `0x303a`, PID `0x1001` |
 | USB serial | `D4:05:92:B9:04:28` |
 | Observed macOS port | `/dev/cu.usbmodem2101` on 2026-09-05 |
-| Firmware | sparkDash development build, ESP-IDF `v5.5.3`; original `01_Fac` image preserved in a verified full backup |
+| Firmware | Sparklet 1.0.0 (sparkDash firmware), ESP-IDF `v5.5.3`; original `01_Fac` image preserved in a verified full backup |
 | Display / touch | 2.16 inch, 480 × 480; touch resolution confirmed in logs |
 | Battery variant | Unknown; the listing offers versions with and without battery |
 
