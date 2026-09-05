@@ -11,3 +11,7 @@ backups/
 .env
 .env.*
 !.env.example
+# Local SDK configurations and release/QA artifacts
+firmware/sparkdash/sdkconfig
+releases/
+.local/

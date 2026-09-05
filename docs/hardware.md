@@ -29,3 +29,7 @@ Factory output says `sh8601: LCD panel create success, version: 2.0.1` and logs 
 | I2S | DIN / DOUT | 21 / 23 |
 
 The boot log also states GPIO 17 and 16 are console UART I/O pins, without assigning each signal in that line. USB serial is the connection used here. Display QSPI, touch interrupt/reset, power rails, SD, and button wiring have **not** been validated locally. Consult the [schematic and source links](references.md) before using them.
+
+## Schematic cross-check (2026-09-05)
+
+The exact schematic and active vendor constructor confirm QSPI clock 0, data 1/2/3/4, **CS 15**, touch **INT 5**, and touch reset 11. LCD reset is driven through AXP2101 ALDO3. The vendor user_config.h reverses CS/INT but those macros are unused in the demo constructor. See notes/2026-09-05-firmware-bringup.md. Flash size is now independently confirmed as 16 MB by esptool.
