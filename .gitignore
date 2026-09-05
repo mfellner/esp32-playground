@@ -18,3 +18,5 @@ releases/
 
 firmware/sparkdash/build-qa/
 firmware/sparkdash/sdkconfig.qa
+
+firmware/sparkdash/build-repro/
