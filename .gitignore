@@ -15,3 +15,6 @@ backups/
 firmware/sparkdash/sdkconfig
 releases/
 .local/
+
+firmware/sparkdash/build-qa/
+firmware/sparkdash/sdkconfig.qa
