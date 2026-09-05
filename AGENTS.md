@@ -11,4 +11,4 @@ This repository targets the **Waveshare ESP32-C6-Touch-AMOLED-2.16**, not an ESP
 - Keep credentials and raw flash/log data in ignored local files. Commit only reviewed, relevant diagnostic excerpts.
 - Update notes after meaningful hardware discoveries. Validate host helpers with enumeration and bounded reads as appropriate; verify firmware using its build and real device behavior when firmware exists.
 
-There is currently no firmware build system. Do not assume `idf.py`, PlatformIO, or Arduino CLI is installed. Python and uv are available; helper dependencies are declared in the script.
+The ESP-IDF project is `firmware/sparkdash`, pinned to SDK v5.5.3 at `/Users/max/esp/esp-idf-v5.5.3`. Activate its `export.sh` before builds; verify SDK availability rather than assuming it in a new environment. Python and uv are available; helper dependencies are declared in each script. Read `docs/sparkdash-validation.md` for completed and outstanding gates. The user excluded the 24-hour soak from v1 completion. Test-only USB controls are compiled out of normal releases.

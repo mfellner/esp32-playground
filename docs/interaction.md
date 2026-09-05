@@ -66,3 +66,7 @@ For host-driven display or sensor control, implement and document a serial proto
 The custom firmware displays two QR codes in sequence. Scan the first with the phone camera to join its WPA2 setup Wi-Fi, then tap **Next: setup page** and scan the URL code. Manual credentials and `http://192.168.4.1` remain visible. Stay connected if the phone reports that this network has no Internet. The setup password changes when a new setup session starts, including after a reboot; forget a saved SparkDash network if the phone keeps reusing an old password.
 
 USB diagnostics accept newline-terminated `STATUS`, `NEXT`, and `PREV`. These commands are implemented by sparkDash firmware only, not the factory firmware. STATUS contains counters and memory measurements, never credentials. Opening USB may reboot the board; do not reopen it while the user is entering setup credentials.
+
+## Verified full-image recovery
+
+See [the recovery procedure](recovery.md) for the physically tested factory-restore and custom-snapshot return workflow. Both full writes verified successfully; saved Wi-Fi/server settings worked after returning to sparkDash. New application updates continue to use generated project flash arguments and preserve NVS.
