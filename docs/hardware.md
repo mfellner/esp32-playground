@@ -33,3 +33,13 @@ The boot log also states GPIO 17 and 16 are console UART I/O pins, without assig
 ## Schematic cross-check (2026-09-05)
 
 The exact schematic and active vendor constructor confirm QSPI clock 0, data 1/2/3/4, **CS 15**, touch **INT 5**, and touch reset 11. LCD reset is driven through AXP2101 ALDO3. The vendor user_config.h reverses CS/INT but those macros are unused in the demo constructor. See notes/2026-09-05-firmware-bringup.md. Flash size is now independently confirmed as 16 MB by esptool.
+
+## Accelerometer bring-up (2026-09-06)
+
+The custom firmware now reads the QMI8658 at `0x6b` on the existing SDA8/SCL7 bus;
+identity `0x05` is required before configuration. With the user holding the device
+in its original upright orientation, observed readings were approximately
+`x=-0.026 g, y=+0.951 g, z=-0.138 g`. Sensor X/Y therefore feed the screen-plane
+detector directly. The user confirmed readable output and aligned Settings/Back
+and navigation controls on both sides and upside down. The detector rejects the
+brief saturated readings observed immediately after sensor startup.

@@ -3,18 +3,117 @@
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
 #include "esp_heap_caps.h"
+#include "esp_lcd_panel_interface.h"
+#include "esp_lcd_panel_ops.h"
 #include "esp_lcd_sh8601.h"
 #include "esp_lcd_touch_cst9217.h"
 #include "esp_log.h"
 #include "esp_lv_adapter.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <algorithm>
+#include <atomic>
 namespace board {
 static esp_lcd_panel_io_handle_t io;
 static esp_lcd_touch_handle_t touch;
 static i2c_master_dev_handle_t pmic;
 static TouchFilter filter = nullptr;
+static esp_lcd_panel_handle_t physical_panel;
+static esp_lcd_panel_t rotated_panel{};
+static uint16_t *rotation_buffer;
+static constexpr size_t StripePixels = 480 * 12;
+static std::atomic<spark::Orientation> angle{spark::Orientation::Upright};
+static i2c_master_dev_handle_t imu;
+static std::atomic<bool> imu_ok{false};
+static uint64_t imu_retry_at = 0;
+static bool imu_initialized = false;
+static esp_err_t imu_read(uint8_t reg, uint8_t *data, size_t n) {
+    return i2c_master_transmit_receive(imu, &reg, 1, data, n, 10);
+}
+static bool imu_configure() {
+    uint8_t id = 0;
+    if (!imu || imu_read(0, &id, 1) != ESP_OK || id != 0x05)
+        return false;
+    // Exact-board QMI8658 reference: auto increment, +/-2 g, 62.5 Hz,
+    // accelerometer only. No PMIC changes and no gyroscope needed.
+    const uint8_t writes[][2] = {{0x08, 0}, {0x02, 0x60}, {0x03, 0x07}, {0x08, 1}};
+    for (const auto &w : writes)
+        if (i2c_master_transmit(imu, w, 2, 10) != ESP_OK)
+            return false;
+    return true;
+}
+bool acceleration(spark::Acceleration &a) {
+    uint64_t now = esp_timer_get_time() / 1000;
+    if (now < imu_retry_at)
+        return false;
+    if (!imu_initialized) {
+        imu_initialized = imu_configure();
+        imu_retry_at = now + (imu_initialized ? 50 : 5000);
+        imu_ok = false;
+        return false;
+    }
+    uint8_t b[6], status;
+    if (imu_read(0x2e, &status, 1) != ESP_OK || !(status & 1) ||
+        imu_read(0x35, b, sizeof b) != ESP_OK) {
+        imu_ok = false;
+        imu_initialized = false;
+        imu_retry_at = now + 1000;
+        return false;
+    }
+    const auto axis = [&](int i) {
+        return int16_t(uint16_t(b[i]) | (uint16_t(b[i + 1]) << 8)) / 16384.0f;
+    };
+    // Sensor-to-display mounting transform. Physical calibration recorded in hardware notes.
+    a = {axis(0), axis(2), axis(4)};
+    imu_ok = true;
+#ifdef CONFIG_SPARKDASH_TEST_COMMANDS
+    static uint64_t next_log = 0;
+    if (now >= next_log) {
+        ESP_LOGI("qa_imu", "x_mg=%d y_mg=%d z_mg=%d", int(a.x * 1000), int(a.y * 1000),
+                 int(a.z * 1000));
+        next_log = now + 1000;
+    }
+#endif
+    return true;
+}
+bool rotation_available() {
+    return imu_ok.load() && rotation_buffer;
+}
+spark::Orientation orientation() {
+    return angle.load();
+}
+bool set_orientation(spark::Orientation next) {
+    if (next == angle.load())
+        return true;
+    if (!rotation_buffer)
+        return false;
+    // Called only by the LVGL lock owner, outside rendering and active gestures.
+    if (esp_lcd_panel_io_tx_param(io, -1, nullptr, 0) != ESP_OK)
+        return false;
+    angle = next;
+    lv_obj_invalidate(lv_screen_active());
+    ESP_LOGI("board", "orientation=%u", unsigned(next) * 90);
+    return true;
+}
+static esp_err_t draw_rotated(esp_lcd_panel_t *, int x1, int y1, int x2, int y2,
+                              const void *pixels) {
+    const auto rotation = angle.load();
+    if (rotation == spark::Orientation::Upright)
+        return esp_lcd_panel_draw_bitmap(physical_panel, x1, y1, x2, y2, pixels);
+    if (!rotation_buffer || x2 <= x1 || y2 <= y1 ||
+        size_t(x2 - x1) * size_t(y2 - y1) > StripePixels)
+        return ESP_ERR_INVALID_SIZE;
+    // LVGL waits for the IO completion callback before reusing the single draw buffer.
+    // Explicitly drain before touching the scratch buffer as an additional lifetime guard.
+    auto err = esp_lcd_panel_io_tx_param(io, -1, nullptr, 0);
+    if (err != ESP_OK)
+        return err;
+    spark::rotate_pixels(static_cast<const uint16_t *>(pixels), rotation_buffer, x2 - x1, y2 - y1,
+                         rotation);
+    auto r = spark::rotate_rect({x1, y1, x2, y2}, rotation);
+    return esp_lcd_panel_draw_bitmap(physical_panel, r.x1, r.y1, r.x2, r.y2, rotation_buffer);
+}
 static void write_reg(uint8_t r, uint8_t v) {
     uint8_t b[] = {r, v};
     ESP_ERROR_CHECK(i2c_master_transmit(pmic, b, 2, 1000));
@@ -55,6 +154,11 @@ static void read_touch(lv_indev_t *, lv_indev_data_t *data) {
     bool down = false;
     if (esp_lcd_touch_read_data(touch) == ESP_OK)
         down = esp_lcd_touch_get_coordinates(touch, &x, &y, &strength, &count, 1) && count;
+    if (down && (x >= 480 || y >= 480))
+        down = false;
+    auto point = spark::unrotate_point({x, y}, angle.load());
+    x = point.x;
+    y = point.y;
     bool consume = filter && filter(down, x, y);
     data->state = down && !consume ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     data->point.x = x;
@@ -123,7 +227,7 @@ void init() {
     panel_cfg.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
     panel_cfg.bits_per_pixel = 16;
     panel_cfg.vendor_config = &vendor;
-    esp_lcd_panel_handle_t panel;
+    auto &panel = physical_panel;
     ESP_ERROR_CHECK(esp_lcd_new_panel_sh8601(io, &panel_cfg, &panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel));
     esp_lcd_panel_io_i2c_config_t ti = ESP_LCD_TOUCH_IO_I2C_CST9217_CONFIG();
@@ -143,9 +247,20 @@ void init() {
     cfg.task_core_id = 0;
     cfg.stack_in_psram = false;
     ESP_ERROR_CHECK(esp_lv_adapter_init(&cfg));
+    rotation_buffer = static_cast<uint16_t *>(
+        heap_caps_malloc(StripePixels * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+    if (!rotation_buffer)
+        ESP_LOGW("board", "Auto-rotate unavailable: no scratch buffer");
+    rotated_panel.draw_bitmap = draw_rotated;
+    i2c_device_config_t sensor{};
+    sensor.device_address = 0x6b;
+    sensor.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    sensor.scl_speed_hz = 400000;
+    if (i2c_master_bus_add_device(i2c, &sensor, &imu) != ESP_OK)
+        ESP_LOGW("board", "Auto-rotate unavailable: sensor bus");
     esp_lv_adapter_display_config_t dc = ESP_LV_ADAPTER_DISPLAY_SPI_WITHOUT_PSRAM_DEFAULT_CONFIG(
-        panel, io, 480, 480, ESP_LV_ADAPTER_ROTATE_0);
-    dc.profile.buffer_height = 24;
+        &rotated_panel, io, 480, 480, ESP_LV_ADAPTER_ROTATE_0);
+    dc.profile.buffer_height = 12;
     dc.profile.require_double_buffer = false;
     auto *display = esp_lv_adapter_register_display(&dc);
     assert(display);
@@ -156,7 +271,7 @@ void init() {
     lv_indev_set_read_cb(indev, read_touch);
     brightness(60);
     ESP_ERROR_CHECK(esp_lv_adapter_start());
-    ESP_LOGI("board", "READY CS=15 TP_INT=5 RGB565 stripe=24 heap=%u",
+    ESP_LOGI("board", "READY CS=15 TP_INT=5 RGB565 stripe=12 heap=%u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 }
 } // namespace board
