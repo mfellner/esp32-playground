@@ -17,7 +17,10 @@ void title_case(char *dst, size_t cap, const char *label) {
 
 const char *expected_project(const char *label) {
     // Mirrors components/app_switch/layout/slots.json.
-    return label && !strcmp(label, "sparklet") ? "sparkdash" : "";
+    if (!label) return "";
+    if (!strcmp(label, "sparklet")) return "sparkdash";
+    if (!strcmp(label, "hermes")) return "hermes_gadget";
+    return "";
 }
 
 size_t make_tiles(const Slot *slots, size_t count, const char *last, Tile *tiles, size_t cap) {

@@ -38,7 +38,8 @@ int main() {
     assert(make_tiles(none, 1, "sparklet", tiles, 4) == 1 && !tiles[0].highlighted);
 
     // Leftover images from other firmware are visible but not launchable.
-    assert(!strcmp(expected_project("sparklet"), "sparkdash") && !*expected_project("hermes"));
+    assert(!strcmp(expected_project("sparklet"), "sparkdash") && !strcmp(expected_project("hermes"), "hermes_gadget"));
+    assert(!*expected_project("other"));
     Slot foreign[1] = {{"sparklet", false, SlotState::Valid, "xiaozhi", "2.4.0", "sparkdash"}};
     assert(make_tiles(foreign, 1, "sparklet", tiles, 4) == 1 && !tiles[0].launchable &&
            !tiles[0].highlighted && !strcmp(tiles[0].subtitle, "Unexpected image: xiaozhi"));

@@ -5,6 +5,6 @@
   "launcher": {"label": "launcher", "project_name": "launcher", "repo": "https://github.com/mfellner/esp32-playground"},
   "apps": [
     {"label": "sparklet", "title": "Sparklet", "project_name": "sparkdash", "repo": "https://github.com/mfellner/sparklet"},
-    {"label": "hermes", "title": "Hermes", "project_name": null, "repo": null, "reserved": true}
+    {"label": "hermes", "title": "Hermes", "project_name": "hermes_gadget", "repo": "https://github.com/mfellner/hermes-gadget-sdk"}
   ]
 }

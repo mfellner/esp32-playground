@@ -8,11 +8,11 @@ Several independent ESP-IDF apps share one device. A small launcher in the facto
 | --- | --- | --- | --- |
 | factory | `launcher` 0x20000, 2 MiB | Launcher (this repo, `firmware/launcher`) | here |
 | ota_0 | `sparklet` 0x220000, 4 MiB | [Sparklet](https://github.com/mfellner/sparklet) metrics dashboard | `mfellner/sparklet` |
-| ota_1 | `hermes` 0x620000, 4 MiB | reserved for a future port of hermes-gadget-sdk | — |
+| ota_1 | `hermes` 0x620000, 4 MiB | [Hermes Gadget](https://github.com/mfellner/hermes-gadget-sdk): push-to-talk voice client for a Hermes Agent | `mfellner/hermes-gadget-sdk` (fork) |
 
 Shared data partitions:
 - `nvs`: 0x9000, 64 KiB, shared through per-app namespaces.
-- `nvs_hermes`: an isolated NVS partition for the reserved app.
+- `nvs_hermes`: an isolated NVS partition for the Hermes app.
 - `storage`: about 5.8 MiB of LittleFS, reserved.
 
 The canonical table is [`components/app_switch/layout/partitions.csv`](components/app_switch/layout/partitions.csv). The registry is [`slots.json`](components/app_switch/layout/slots.json).
@@ -23,9 +23,9 @@ The canonical table is [`components/app_switch/layout/partitions.csv`](component
 | --- | --- | --- |
 | Tap a tile | — | Start that app; it stays selected across power cycles |
 | App's own **Apps** control (Sparklet: Settings → Apps) | Open the launcher | — |
-| **KEY** short press (GPIO10) | Open the launcher | Start the highlighted (last) app |
-| **BOOT** hold ≥ 1 s (GPIO9) | Open the launcher | — |
-| **PWR** short press | App-defined (Sparklet: dim/wake) | Screen off/on |
+| **KEY** short press (GPIO10) | Sparklet: open the launcher. Hermes: KEY is push-to-talk (hold ~0.3 s) | Start the highlighted (last) app |
+| **BOOT** hold ≥ 1 s (GPIO9) | Open the launcher (Hermes: a quick press cancels) | — |
+| **PWR** short press | App-defined (Sparklet: dim/wake; Hermes: screen off/on) | Screen off/on |
 | **KEY** held while the board resets or powers on | Launcher opens once; the selected app is unchanged | — |
 | **PWR** held 6 s | Power off (PMIC) | Power off (PMIC) |
 
