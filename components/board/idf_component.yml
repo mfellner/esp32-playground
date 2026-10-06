@@ -1,0 +1,9 @@
+version: "0.1.0"
+description: Board support (panel, touch, LVGL adapter, IMU orientation, PMIC power key) for the Waveshare ESP32-C6-Touch-AMOLED-2.16
+url: https://github.com/mfellner/esp32-playground
+dependencies:
+  idf: "==5.5.3"
+  lvgl/lvgl: "~9.5.0"
+  espressif/esp_lvgl_adapter: "^0.3.0"
+  espressif/esp_lcd_sh8601: "^1.0.0"
+  waveshare/esp_lcd_touch_cst9217: "^1.0.4"

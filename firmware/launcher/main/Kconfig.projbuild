@@ -1,0 +1,7 @@
+menu "Launcher validation"
+config LAUNCHER_TEST_COMMANDS
+    bool "Enable USB validation commands"
+    default n
+    help
+        Validation builds only: TEST_BOOT <label> switches apps over USB. Never enable in releases.
+endmenu

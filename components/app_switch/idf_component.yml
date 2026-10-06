@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: Launcher client and shared flash layout for apps on the Waveshare ESP32-C6-Touch-AMOLED-2.16 platform
+url: https://github.com/mfellner/esp32-playground
+dependencies:
+  idf: "==5.5.3"

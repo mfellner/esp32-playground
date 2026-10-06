@@ -1,0 +1,25 @@
+menu "App switch (platform launcher client)"
+
+config APP_SWITCH_BOOT_GPIO
+    int "BOOT button GPIO (active low, polled after startup only)"
+    default 9
+    range -1 30
+
+config APP_SWITCH_BOOT_HOLD_MS
+    int "BOOT hold time that opens the launcher (ms)"
+    default 1000
+    range 300 5000
+
+config APP_SWITCH_KEY_GPIO
+    int "KEY button GPIO (active low); -1 disables"
+    default 10
+    range -1 30
+    help
+        Waveshare ESP32-C6-Touch-AMOLED-2.16 schematic: Key3 "KEY" on GPIO10 with a 10K pull-up.
+        Must not be a strapping pin (GPIO4/5/8/9/15 on the ESP32-C6).
+
+config APP_SWITCH_KEY_MAX_PRESS_MS
+    int "Longest KEY press counted as a short press (ms)"
+    default 800
+
+endmenu

@@ -1,0 +1,10 @@
+{
+  "layout_version": 1,
+  "flash_size": 16777216,
+  "partition_table_offset": "0x8000",
+  "launcher": {"label": "launcher", "project_name": "launcher", "repo": "https://github.com/mfellner/esp32-playground"},
+  "apps": [
+    {"label": "sparklet", "title": "Sparklet", "project_name": "sparkdash", "repo": "https://github.com/mfellner/sparklet"},
+    {"label": "hermes", "title": "Hermes", "project_name": null, "repo": null, "reserved": true}
+  ]
+}

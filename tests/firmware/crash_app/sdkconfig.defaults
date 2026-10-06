@@ -1,0 +1,2 @@
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../../../components/app_switch/layout/partitions.csv"
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

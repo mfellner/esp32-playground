@@ -3,13 +3,13 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyserial==3.5"]
 # ///
-"""Enumerate USB serial devices or receive bounded ESP32 console output."""
+"""Enumerate USB serial devices, receive bounded ESP32 console output, or send one diagnostic line."""
 
 import argparse
 import math
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 
 import serial
 from serial.tools import list_ports
@@ -33,6 +33,17 @@ def main():
     monitor.add_argument("--seconds", type=positive_seconds, default=5.0)
     monitor.add_argument("--baud", type=int, default=115200)
     monitor.add_argument("--output", type=Path, help="new raw log file; refuses overwrite")
+    monitor.add_argument(
+        "--send",
+        action="append",
+        default=[],
+        metavar="LINE",
+        help="diagnostic line sent after --delay seconds (repeatable); firmware-defined, never a shell",
+    )
+    monitor.add_argument("--delay", type=positive_seconds, default=2.0)
+    monitor.add_argument(
+        "--repeat", type=positive_seconds, help="resend the --send lines every N seconds"
+    )
     args = parser.parse_args()
     ports = list(list_ports.comports())
     if args.command == "list":
@@ -58,9 +69,16 @@ def main():
         connection.port = port
         print(f"Opening {port} at {args.baud}; this may reboot the board.", file=sys.stderr)
         connection.open()
-        deadline = time.monotonic() + args.seconds
+        start = time.monotonic()
+        deadline = start + args.seconds
+        pending = list(args.send)
         received = 0
         while time.monotonic() < deadline:
+            if pending and time.monotonic() - start >= args.delay:
+                connection.write(pending.pop(0).encode() + b"\n")
+                if not pending and args.repeat:
+                    pending = list(args.send)
+                    args.delay += args.repeat
             data = connection.read(min(connection.in_waiting or 1, 4096))
             if data:
                 received += len(data)

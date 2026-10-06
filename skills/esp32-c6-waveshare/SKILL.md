@@ -1,18 +1,55 @@
 ---
 name: esp32-c6-waveshare
-description: Discover, monitor, and develop firmware for Max's USB-connected Waveshare ESP32-C6-Touch-AMOLED-2.16 in the esp32-playground repository. Use for this board's serial connection, display bring-up, diagnostics, backup, and flashing workflows.
+description: Discover, monitor, flash and switch apps on Max's USB-connected Waveshare ESP32-C6-Touch-AMOLED-2.16 running the esp32-playground multi-app platform (launcher + Sparklet + reserved slot). Use for this board's serial connection, backups, app installs, boot selection, buttons and recovery.
 ---
 
 # Waveshare ESP32-C6 local workflow
 
-The repository is currently `/Users/max/Developer/github/mfellner/esp32-playground`. This skill's versioned source lives under its `skills/` directory; the personal installation is a symlink. If relocated, find the repository before using its helper.
+The platform repository is `mfellner/esp32-playground`, checked out locally at `/Users/max/Developer/github/mfellner/esp32-playground`. This skill's versioned source is in its `skills/` directory, and the personal installation is a symlink to it. If the repository has moved, find it before running its helpers. App repositories, such as `mfellner/sparklet` (local `../sparklet`), build the images that go into the slots.
 
-Read `AGENTS.md`, `docs/hardware.md`, and `docs/interaction.md` in that repository for hardware operations. Read `notes/2026-09-05-discovery.md` for factory firmware evidence, and `docs/references.md` when sourcing board drivers or a toolchain.
+Before any hardware work, read `AGENTS.md`, `docs/hardware.md`, `docs/interaction.md` and `docs/platform.md` in the platform repository. `notes/` holds the dated evidence; the latest is `notes/2026-10-06-multi-app-platform.md`.
 
-Enumerate with `uv run scripts/esp32_serial.py list` from the repository. Select the known USB identity `303a:1001`, serial `D4:05:92:B9:04:28`, not a hardcoded port; `/dev/cu.usbmodem2101` was observed on macOS. The USB descriptor is shared with other Espressif devices, so use serial identity and boot logs to distinguish boards.
+## Finding the board
 
-Use `uv run scripts/esp32_serial.py monitor --seconds 5` for a bounded receive-only session. Opening may reset the board even with DTR/RTS false; the first capture reported `USB_UART_HPSYS`. Close monitors before esptool. The factory console has no verified shell or remote display protocol.
+- Enumerate with `uv run scripts/esp32_serial.py list`.
+- Select the known USB identity `303a:1001` with serial `D4:05:92:B9:04:28`, not a hardcoded port. `/dev/cu.usbmodem2101` is the port that has been observed.
+- Opening the port resets the board. Captures must stay bounded:
+  ```sh
+  uv run scripts/esp32_serial.py monitor --seconds 8 --delay 4 --send STATUS
+  ```
+- Close monitors before using esptool or `tools/device.py`.
 
-The factory image identifies ESP32-C6 rev v0.2, 16 MB flash, `01_Fac`, and ESP-IDF v5.5.3. Vendor controller names CO5300/CST9220 differ from software labels sh8601/CST9217; inspect the exact board demo and schematic before choosing initialization sequences. Do not reuse ESP32-S3 or other display-size pin maps.
+## Flash layout and installs
 
-For requested firmware replacement, preserve a full flash backup and checksum first when readable, follow the selected project's generated flashing arguments, and record the result in notes. Existing user authorization governs execution; documentation/discovery alone is not a firmware replacement request. Avoid eFuse or security changes as incidental setup. Raw backups/logs remain ignored. The current application is `firmware/sparkdash`, using ESP-IDF 5.5.3 installed outside Git at `/Users/max/esp/esp-idf-v5.5.3`. Activate its `export.sh` before building. Read `docs/sparkdash-validation.md` and the bring-up notes for actual gates and backup metadata. Normal USB diagnostics support STATUS/NEXT/PREV; validation-only server controls require a separate test build and must not ship in releases.
+The device uses the platform layout:
+
+| Slot | Offset | Size | Contents |
+| --- | --- | --- | --- |
+| launcher (factory) | 0x20000 | 2 MiB | launcher |
+| sparklet (ota_0) | 0x220000 | 4 MiB | Sparklet |
+| hermes (ota_1) | 0x620000 | 4 MiB | reserved |
+
+NVS is shared: the `nvs` partition sits at 0x9000 (64 KiB).
+
+- **Inspect** with `uv run tools/device.py status`.
+- **Install** with `tools/device.py install <slot> <build-dir> [--boot]`, or run `idf.py -p PORT <slot>-flash` in the app project.
+- **Switch** with `tools/device.py boot <slot>`, or use `recover` to start the launcher.
+- **Never run `idf.py flash` from an app project.** The platform guard blocks it, because it would overwrite the launcher.
+- Only `idf.py -C firmware/launcher -p PORT flash` writes the bootloader and partition table.
+
+## Buttons
+
+| Button | In an app | At reset |
+| --- | --- | --- |
+| KEY (GPIO10) | Short press opens the launcher | Holding it opens the launcher once |
+| BOOT (GPIO9) | Hold for at least 1 s to open the launcher | Holding it enters ROM download mode |
+| PWR (AXP2101) | Short press is app-defined | Holding it for 6 s powers off |
+
+## Rules
+
+- **Firmware changes.** Before any requested firmware change, make a full backup with `tools/device.py backup` and use generated flash arguments. Record the results in `notes/`.
+- **Authorization.** Existing user authorization governs execution. Discovery and documentation work alone is not a firmware-change request.
+- **Security settings.** Don't change eFuses or security configuration.
+- **Ignored data.** Raw backups and logs stay ignored.
+- **SDK.** ESP-IDF 5.5.3 is installed outside Git at `/Users/max/esp/esp-idf-v5.5.3`; activate it with `export.sh`.
+- **USB commands.** The launcher answers `STATUS`; Sparklet accepts `STATUS`, `NEXT` and `PREV`. QA builds add `TEST_*` controls, which are never shipped.

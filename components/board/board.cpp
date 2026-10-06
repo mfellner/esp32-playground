@@ -19,11 +19,12 @@ static esp_lcd_panel_io_handle_t io;
 static esp_lcd_touch_handle_t touch;
 static i2c_master_dev_handle_t pmic;
 static TouchFilter filter = nullptr;
+static AccelerationObserver observer = nullptr;
 static esp_lcd_panel_handle_t physical_panel;
 static esp_lcd_panel_t rotated_panel{};
 static uint16_t *rotation_buffer;
 static constexpr size_t StripePixels = 480 * 12;
-static std::atomic<spark::Orientation> angle{spark::Orientation::Upright};
+static std::atomic<Orientation> angle{Orientation::Upright};
 static i2c_master_dev_handle_t imu;
 static std::atomic<bool> imu_ok{false};
 static uint64_t imu_retry_at = 0;
@@ -43,7 +44,7 @@ static bool imu_configure() {
             return false;
     return true;
 }
-bool acceleration(spark::Acceleration &a) {
+bool acceleration(Acceleration &a) {
     uint64_t now = esp_timer_get_time() / 1000;
     if (now < imu_retry_at)
         return false;
@@ -67,23 +68,17 @@ bool acceleration(spark::Acceleration &a) {
     // Sensor-to-display mounting transform. Physical calibration recorded in hardware notes.
     a = {axis(0), axis(2), axis(4)};
     imu_ok = true;
-#ifdef CONFIG_SPARKDASH_TEST_COMMANDS
-    static uint64_t next_log = 0;
-    if (now >= next_log) {
-        ESP_LOGI("qa_imu", "x_mg=%d y_mg=%d z_mg=%d", int(a.x * 1000), int(a.y * 1000),
-                 int(a.z * 1000));
-        next_log = now + 1000;
-    }
-#endif
+    if (observer)
+        observer(a);
     return true;
 }
 bool rotation_available() {
     return imu_ok.load() && rotation_buffer;
 }
-spark::Orientation orientation() {
+Orientation orientation() {
     return angle.load();
 }
-bool set_orientation(spark::Orientation next) {
+bool set_orientation(Orientation next) {
     if (next == angle.load())
         return true;
     if (!rotation_buffer)
@@ -99,7 +94,7 @@ bool set_orientation(spark::Orientation next) {
 static esp_err_t draw_rotated(esp_lcd_panel_t *, int x1, int y1, int x2, int y2,
                               const void *pixels) {
     const auto rotation = angle.load();
-    if (rotation == spark::Orientation::Upright)
+    if (rotation == Orientation::Upright)
         return esp_lcd_panel_draw_bitmap(physical_panel, x1, y1, x2, y2, pixels);
     if (!rotation_buffer || x2 <= x1 || y2 <= y1 ||
         size_t(x2 - x1) * size_t(y2 - y1) > StripePixels)
@@ -109,9 +104,9 @@ static esp_err_t draw_rotated(esp_lcd_panel_t *, int x1, int y1, int x2, int y2,
     auto err = esp_lcd_panel_io_tx_param(io, -1, nullptr, 0);
     if (err != ESP_OK)
         return err;
-    spark::rotate_pixels(static_cast<const uint16_t *>(pixels), rotation_buffer, x2 - x1, y2 - y1,
+    rotate_pixels(static_cast<const uint16_t *>(pixels), rotation_buffer, x2 - x1, y2 - y1,
                          rotation);
-    auto r = spark::rotate_rect({x1, y1, x2, y2}, rotation);
+    auto r = rotate_rect({x1, y1, x2, y2}, rotation);
     return esp_lcd_panel_draw_bitmap(physical_panel, r.x1, r.y1, r.x2, r.y2, rotation_buffer);
 }
 static void write_reg(uint8_t r, uint8_t v) {
@@ -132,13 +127,11 @@ void brightness(unsigned n) {
     uint8_t value = std::min(n, 100u) * 255 / 100;
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io, 0x02005100, &value, 1));
 }
-#ifdef CONFIG_SPARKDASH_TEST_COMMANDS
 void wait_transfer() {
     // IDF SPI tx_param drains queued transfers; a negative command with no data
     // performs no panel write. Call only from the LVGL task/lock owner.
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io, -1, nullptr, 0));
 }
-#endif
 bool lock(int timeout) {
     return esp_lv_adapter_lock(timeout) == ESP_OK;
 }
@@ -148,6 +141,47 @@ void unlock() {
 void set_touch_filter(TouchFilter f) {
     filter = f;
 }
+void set_acceleration_observer(AccelerationObserver o) {
+    observer = o;
+}
+// AXP2101 power key (PWRON). AXP_IRQ is not wired to the ESP32, so the status register is polled.
+// INTEN2/INTSTS2 bit 3 = short press, bit 2 = long press; status bits clear by writing 1.
+static constexpr uint8_t PowerOffEnable = 0x22, KeyLevels = 0x27, IrqEnable2 = 0x41,
+                         IrqStatus2 = 0x49, KeyShortBit = 1 << 3, KeyLongBit = 1 << 2;
+static bool power_key_ready = false;
+static esp_err_t pmic_read(uint8_t r, uint8_t &v) {
+    return i2c_master_transmit_receive(pmic, &r, 1, &v, 1, 20);
+}
+static esp_err_t pmic_write(uint8_t r, uint8_t v) {
+    uint8_t b[] = {r, v};
+    return i2c_master_transmit(pmic, b, 2, 20);
+}
+static void configure_power_key() {
+    // The PMIC keeps these registers across ESP32 resets, so every app writes the same values:
+    // long-press power-off enabled (not restart), long-press IRQ after 1.5 s, power-off after 6 s,
+    // power-on time unchanged, short/long press IRQs enabled, stale key events cleared.
+    uint8_t off, levels, enable;
+    if (pmic_read(PowerOffEnable, off) != ESP_OK || pmic_read(KeyLevels, levels) != ESP_OK ||
+        pmic_read(IrqEnable2, enable) != ESP_OK ||
+        pmic_write(PowerOffEnable, uint8_t((off | 0x02) & ~0x01)) != ESP_OK ||
+        pmic_write(KeyLevels, uint8_t((levels & ~0x3c) | (1 << 4) | (1 << 2))) != ESP_OK ||
+        pmic_write(IrqEnable2, uint8_t(enable | KeyShortBit | KeyLongBit)) != ESP_OK ||
+        pmic_write(IrqStatus2, KeyShortBit | KeyLongBit) != ESP_OK) {
+        ESP_LOGW("board", "PWR key unavailable");
+        return;
+    }
+    power_key_ready = true;
+}
+unsigned poll_power_key() {
+    uint8_t status;
+    if (!power_key_ready || pmic_read(IrqStatus2, status) != ESP_OK)
+        return PowerKeyNone;
+    status &= KeyShortBit | KeyLongBit;
+    if (!status || pmic_write(IrqStatus2, status) != ESP_OK)
+        return PowerKeyNone;
+    return (status & KeyShortBit ? unsigned(PowerKeyShort) : 0u) |
+           (status & KeyLongBit ? unsigned(PowerKeyLong) : 0u);
+}
 static void read_touch(lv_indev_t *, lv_indev_data_t *data) {
     uint16_t x = 0, y = 0, strength = 0;
     uint8_t count = 0;
@@ -156,7 +190,7 @@ static void read_touch(lv_indev_t *, lv_indev_data_t *data) {
         down = esp_lcd_touch_get_coordinates(touch, &x, &y, &strength, &count, 1) && count;
     if (down && (x >= 480 || y >= 480))
         down = false;
-    auto point = spark::unrotate_point({x, y}, angle.load());
+    auto point = unrotate_point({x, y}, angle.load());
     x = point.x;
     y = point.y;
     bool consume = filter && filter(down, x, y);
@@ -193,6 +227,7 @@ void init() {
     aldo3(true);
     aldo3(false);
     aldo3(true);
+    configure_power_key();
     spi_bus_config_t sb{};
     sb.sclk_io_num = 0;
     sb.data0_io_num = 1;

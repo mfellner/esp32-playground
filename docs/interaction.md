@@ -23,7 +23,7 @@ lsof /dev/cu.usbmodem2101
 
 ## Bootloader inspection and backup
 
-The pinned esptool CLI below was downloaded and its version command tested during setup. The flash probe and full backup were completed on 2026-09-05; see the bring-up notes. They normally reset the device into its bootloader and back. Stop any serial monitor first and replace the example port with the discovered one.
+The pinned esptool CLI below was downloaded and its version command tested during setup. The flash probe and full backup were completed on 2026-09-05; see the [bring-up notes](https://github.com/mfellner/sparklet/blob/main/notes/2026-09-05-firmware-bringup.md) in the Sparklet repository. They normally reset the device into its bootloader and back. Stop any serial monitor first and replace the example port with the discovered one.
 
 ```sh
 uvx --from esptool==5.4.0 esptool --chip esp32c6 --port /dev/cu.usbmodem2101 flash-id
@@ -39,7 +39,7 @@ shasum -a 256 backups/factory-2026-09-05.bin
 wc -c backups/factory-2026-09-05.bin
 ```
 
-For the reported 16 MB flash, expect 16,777,216 bytes. Preserve the checksum separately with capture date, board identity, and tool version. Use a fresh name for subsequent captures. Flash dumps can contain configuration and credentials, so `backups/` is ignored. The verified factory backup is recorded in `notes/2026-09-05-firmware-bringup.md`. If security restrictions prevent reading, report that limitation before replacing the only available firmware; do not bypass protection.
+For the reported 16 MB flash, expect 16,777,216 bytes. Preserve the checksum separately with capture date, board identity, and tool version. Use a fresh name for subsequent captures. Flash dumps can contain configuration and credentials, so `backups/` is ignored. The verified factory backup is recorded in the [Sparklet bring-up notes](https://github.com/mfellner/sparklet/blob/main/notes/2026-09-05-firmware-bringup.md). If security restrictions prevent reading, report that limitation before replacing the only available firmware; do not bypass protection.
 
 If automatic bootloader entry fails, the vendor describes holding BOOT while powering on. Re-enumerate the port after entering download mode. A battery-powered unit may remain powered when USB is unplugged; use its power control if necessary. Avoid repeated reset loops when manual board access is required.
 
@@ -49,24 +49,31 @@ Command syntax and full-flash reads are documented in [Espressif's esptool guide
 
 Start from the [exact Waveshare board repository](https://github.com/waveshareteam/ESP32-C6-Touch-AMOLED-2.16), inspect its example requirements, and pin the chosen revision and framework version. ESP-IDF 5.5.3 is an observed factory build version, not a verified requirement for every vendor example. ESP-IDF 5.5.3 is installed at `/Users/max/esp/esp-idf-v5.5.3`; activate it with `. /Users/max/esp/esp-idf-v5.5.3/export.sh`.
 
-For an ESP-IDF project, after installing and activating its supported SDK, the usual workflow is:
+The device runs the [multi-app platform](platform.md). Build each project with the pinned SDK and install it with generated arguments:
 
 ```sh
-idf.py set-target esp32c6
-idf.py build
-idf.py -p /dev/cu.usbmodem2101 flash monitor
+uv run tools/device.py status
+idf.py -C firmware/launcher build
+uv run tools/device.py install launcher firmware/launcher/build
+uv run tools/device.py install sparklet ../sparklet/firmware/sparkdash/build --boot
 ```
 
-Run these commands from `firmware/sparkdash`, the ESP-IDF application directory. Flash only as part of a requested firmware change, after backup. Let the build generate offsets and partition settings. The observed factory partition layout is historical information, not a flashing recipe. Exit the IDF monitor with Ctrl+].
+App projects disable `idf.py flash`/`app-flash` (they would overwrite the launcher and reset otadata); `idf.py -p PORT <slot>-flash` writes only the app's slot. `idf.py -C firmware/launcher -p PORT flash` updates bootloader, partition table and launcher and resets the boot selection to the launcher. Flash only as part of a requested firmware change, after backup. The observed factory partition layout is historical information, not a flashing recipe. Exit the IDF monitor with Ctrl+].
+
+Bounded captures can send firmware-defined diagnostic lines, never shell commands:
+
+```sh
+uv run scripts/esp32_serial.py monitor --seconds 8 --delay 4 --send STATUS
+```
 
 For host-driven display or sensor control, implement and document a serial protocol in custom firmware (for example, framed requests and responses). Mere access to the USB console does not expose display, microphones, touch, or GPIO as host peripherals.
 
-## sparkDash setup and diagnostics
+## App diagnostics
 
 The custom firmware displays two QR codes in sequence. Scan the first with the phone camera to join its WPA2 setup Wi-Fi, then tap **Next: setup page** and scan the URL code. Manual credentials and `http://192.168.4.1` remain visible. Stay connected if the phone reports that this network has no Internet. The setup password changes when a new setup session starts, including after a reboot; forget a saved SparkDash network if the phone keeps reusing an old password.
 
-USB diagnostics accept newline-terminated `STATUS`, `NEXT`, and `PREV`. These commands are implemented by sparkDash firmware only, not the factory firmware. STATUS contains counters and memory measurements, never credentials. Opening USB may reboot the board; do not reopen it while the user is entering setup credentials.
+The launcher answers `STATUS` with slots, launch reason, heap, raw GPIO9/10/18 levels and button counters. Sparklet accepts newline-terminated `STATUS`, `NEXT`, and `PREV`; its setup flow is documented in the Sparklet repository. These commands exist only in the respective firmware, not the factory firmware. STATUS contains counters and memory measurements, never credentials. Opening USB may reboot the board; do not reopen it while the user is entering setup credentials.
 
 ## Verified full-image recovery
 
-See [the recovery procedure](recovery.md) for the physically tested factory-restore and custom-snapshot return workflow. Both full writes verified successfully; saved Wi-Fi/server settings worked after returning to sparkDash. New application updates continue to use generated project flash arguments and preserve NVS.
+See [the recovery procedure](recovery.md) for the physically tested factory-restore and custom-snapshot return workflow. Both full writes verified successfully; saved Wi-Fi/server settings worked after returning to sparkDash. Platform installs use generated slot arguments and preserve NVS.
