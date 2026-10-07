@@ -47,6 +47,21 @@ Raw logs stay in ignored `logs/`.
 
 **Platform registration.** `slots.json` and the launcher now expect `hermes_gadget` in the `hermes` slot. The launcher was reinstalled.
 
+**Hermes menu (2026-10-07, fork branch `hermes-menus`).**
+- **Firmware:** settings open on a Hermes page; it opens a server-driven menu (Status, Model, Sessions, New session). The idle screen shows the model and session title from a new `info` message.
+- **Plugin:** installed pinned to the branch head (`hermes plugins install .../tree/main/plugin --ref <sha>`). The installer ignored a branch name in the URL and reinstalled `main` until `--ref` was used.
+- **Driven over the serial console against the live gateway:**
+  - The info line showed `gpt-6.1-sol` and "Check Berlin weather".
+  - The main menu listed four items.
+  - Sessions listed the device's sessions with the current one marked.
+  - New session ran `/new` (`session_reset` in the gateway log).
+  - Resuming "Check Berlin weather" from the list worked.
+  - Model showed Hermes's five providers with the current one under the cursor. It was closed without switching.
+  - The Status card read: model, provider "ChatGPT or Codex Subscription", the session, context window 272,000, tokens used 1,178,743.
+- **Logs:** no plugin warnings.
+- **Bench tooling:** `scripts/esp32_serial.py monitor --gap N` spaces `--send` lines, so a menu can load before the next pick.
+- **Not exercised on the device:** touch taps and swipes on the menu (covered by host and simulator tests), and switching to a different model.
+
 ## Not exercised
 
 - The full hardware-validation checklist of the fork (`docs/hardware-validation.md`).
