@@ -41,6 +41,7 @@ def main():
         help="diagnostic line sent after --delay seconds (repeatable); firmware-defined, never a shell",
     )
     monitor.add_argument("--delay", type=positive_seconds, default=2.0)
+    monitor.add_argument("--gap", type=float, default=0.0, help="seconds between consecutive --send lines")
     monitor.add_argument(
         "--repeat", type=positive_seconds, help="resend the --send lines every N seconds"
     )
@@ -76,6 +77,7 @@ def main():
         while time.monotonic() < deadline:
             if pending and time.monotonic() - start >= args.delay:
                 connection.write(pending.pop(0).encode() + b"\n")
+                args.delay += args.gap
                 if not pending and args.repeat:
                     pending = list(args.send)
                     args.delay += args.repeat
